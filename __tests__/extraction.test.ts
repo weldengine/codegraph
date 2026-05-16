@@ -94,6 +94,11 @@ describe('Language Detection', () => {
     expect(detectLanguage('main.dart')).toBe('dart');
   });
 
+  it('should detect Zig files', () => {
+    expect(detectLanguage('main.zig')).toBe('zig');
+    expect(detectLanguage('build.zon')).toBe('zig');
+  });
+
   it('should return unknown for unsupported extensions', () => {
     expect(detectLanguage('styles.css')).toBe('unknown');
     expect(detectLanguage('data.json')).toBe('unknown');
@@ -122,6 +127,7 @@ describe('Language Support', () => {
     expect(languages).toContain('swift');
     expect(languages).toContain('kotlin');
     expect(languages).toContain('dart');
+    expect(languages).toContain('zig');
   });
 });
 
@@ -3647,5 +3653,204 @@ class Svc {
     // The decorated symbol must be `method`, not the constructor or class.
     const decoratedNode = result.nodes.find((n) => n.id === decorMethod!.fromNodeId);
     expect(decoratedNode?.name).toBe('method');
+  });
+});
+
+describe('Zig Extraction', () => {
+  it('should extract top-level function declarations', () => {
+    const code = `
+pub fn add(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+fn internal(x: u8) void {
+    _ = x;
+}
+`;
+    const result = extractFromSource('math.zig', code);
+
+    const pubFn = result.nodes.find((n) => n.kind === 'function' && n.name === 'add');
+    expect(pubFn).toBeDefined();
+    expect(pubFn?.visibility).toBe('public');
+
+    const privFn = result.nodes.find((n) => n.kind === 'function' && n.name === 'internal');
+    expect(privFn).toBeDefined();
+    expect(privFn?.visibility).toBe('private');
+  });
+
+  it('should extract function signatures', () => {
+    const code = `
+pub fn add(a: i32, b: i32) i32 {
+    return a + b;
+}
+`;
+    const result = extractFromSource('math.zig', code);
+    const fn = result.nodes.find((n) => n.name === 'add');
+    expect(fn?.signature).toContain('(a: i32, b: i32)');
+  });
+
+  it('should extract struct declarations with fields', () => {
+    const code = `
+pub const Vec2 = struct {
+    x: f32,
+    y: f32,
+};
+`;
+    const result = extractFromSource('vec.zig', code);
+
+    const struct = result.nodes.find((n) => n.kind === 'struct');
+    expect(struct).toBeDefined();
+    expect(struct?.name).toBe('Vec2');
+    expect(struct?.visibility).toBe('public');
+
+    const fields = result.nodes.filter((n) => n.kind === 'field');
+    const fieldNames = fields.map((f) => f.name);
+    expect(fieldNames).toContain('x');
+    expect(fieldNames).toContain('y');
+  });
+
+  it('should extract struct methods', () => {
+    const code = `
+pub const Vec2 = struct {
+    x: f32,
+    y: f32,
+
+    pub fn length(self: Vec2) f32 {
+        return @sqrt(self.x * self.x + self.y * self.y);
+    }
+
+    fn dot(self: Vec2, other: Vec2) f32 {
+        return self.x * other.x + self.y * other.y;
+    }
+};
+`;
+    const result = extractFromSource('vec.zig', code);
+
+    const pubMethod = result.nodes.find((n) => n.kind === 'method' && n.name === 'length');
+    expect(pubMethod).toBeDefined();
+    expect(pubMethod?.visibility).toBe('public');
+
+    const privMethod = result.nodes.find((n) => n.kind === 'method' && n.name === 'dot');
+    expect(privMethod).toBeDefined();
+    expect(privMethod?.visibility).toBe('private');
+
+    // Methods should be contained by the struct
+    const containsEdges = result.edges.filter((e) => e.kind === 'contains');
+    const struct = result.nodes.find((n) => n.kind === 'struct');
+    expect(containsEdges.some((e) => e.source === struct?.id && e.target === pubMethod?.id)).toBe(true);
+  });
+
+  it('should extract enum declarations with members', () => {
+    const code = `
+pub const Color = enum {
+    red,
+    green,
+    blue,
+};
+`;
+    const result = extractFromSource('color.zig', code);
+
+    const enumNode = result.nodes.find((n) => n.kind === 'enum');
+    expect(enumNode).toBeDefined();
+    expect(enumNode?.name).toBe('Color');
+
+    const members = result.nodes.filter((n) => n.kind === 'enum_member');
+    const memberNames = members.map((m) => m.name);
+    expect(memberNames).toContain('red');
+    expect(memberNames).toContain('green');
+    expect(memberNames).toContain('blue');
+  });
+
+  it('should extract error sets as enums', () => {
+    const code = `
+pub const AppError = error {
+    OutOfMemory,
+    InvalidInput,
+};
+`;
+    const result = extractFromSource('errors.zig', code);
+
+    const enumNode = result.nodes.find((n) => n.kind === 'enum' && n.name === 'AppError');
+    expect(enumNode).toBeDefined();
+
+    const members = result.nodes.filter((n) => n.kind === 'enum_member');
+    const memberNames = members.map((m) => m.name);
+    expect(memberNames).toContain('OutOfMemory');
+    expect(memberNames).toContain('InvalidInput');
+  });
+
+  it('should extract @import as import node', () => {
+    const code = `
+const std = @import("std");
+const math = @import("./math.zig");
+`;
+    const result = extractFromSource('main.zig', code);
+
+    const importStd = result.nodes.find((n) => n.kind === 'import' && n.name === 'std');
+    expect(importStd).toBeDefined();
+
+    const importMath = result.nodes.find((n) => n.kind === 'import' && n.name === 'math');
+    expect(importMath).toBeDefined();
+
+    // Should produce unresolved references for the module paths
+    const stdRef = result.unresolvedReferences.find((r) => r.referenceName === 'std');
+    expect(stdRef).toBeDefined();
+    expect(stdRef?.referenceKind).toBe('imports');
+  });
+
+  it('should extract chained @import as import node', () => {
+    const code = `
+const io = @import("std").io;
+`;
+    const result = extractFromSource('main.zig', code);
+
+    const importIo = result.nodes.find((n) => n.kind === 'import' && n.name === 'io');
+    expect(importIo).toBeDefined();
+  });
+
+  it('should extract plain constants and variables', () => {
+    const code = `
+pub const PI: f64 = 3.14159;
+var global_count: i32 = 0;
+`;
+    const result = extractFromSource('consts.zig', code);
+
+    const pi = result.nodes.find((n) => n.name === 'PI');
+    expect(pi).toBeDefined();
+    expect(pi?.kind).toBe('constant');
+    expect(pi?.visibility).toBe('public');
+
+    const count = result.nodes.find((n) => n.name === 'global_count');
+    expect(count).toBeDefined();
+    expect(count?.kind).toBe('variable');
+    expect(count?.visibility).toBe('private');
+  });
+
+  it('should extract test declarations as functions', () => {
+    const code = `
+test "addition works" {
+    const x = 1 + 2;
+    _ = x;
+}
+`;
+    const result = extractFromSource('math_test.zig', code);
+
+    const testFn = result.nodes.find((n) => n.kind === 'function' && n.name === 'addition works');
+    expect(testFn).toBeDefined();
+  });
+
+  it('should extract function calls', () => {
+    const code = `
+fn helper() void {}
+
+pub fn main() void {
+    helper();
+}
+`;
+    const result = extractFromSource('main.zig', code);
+
+    const callRef = result.unresolvedReferences.find((r) => r.referenceKind === 'calls');
+    expect(callRef).toBeDefined();
+    expect(callRef?.referenceName).toBe('helper');
   });
 });

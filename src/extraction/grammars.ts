@@ -35,6 +35,7 @@ const WASM_GRAMMAR_FILES: Record<GrammarLanguage, string> = {
   dart: 'tree-sitter-dart.wasm',
   pascal: 'tree-sitter-pascal.wasm',
   scala: 'tree-sitter-scala.wasm',
+  zig: 'tree-sitter-zig.wasm',
 };
 
 /**
@@ -78,6 +79,8 @@ export const EXTENSION_MAP: Record<string, Language> = {
   '.fmx': 'pascal',
   '.scala': 'scala',
   '.sc': 'scala',
+  '.zig': 'zig',
+  '.zon': 'zig',
 };
 
 /**
@@ -291,6 +294,7 @@ export function getLanguageDisplayName(language: Language): string {
     liquid: 'Liquid',
     pascal: 'Pascal / Delphi',
     scala: 'Scala',
+    zig: 'Zig',
     unknown: 'Unknown',
   };
   return names[language] || language;

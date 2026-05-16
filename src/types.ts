@@ -85,6 +85,7 @@ export const LANGUAGES = [
   'liquid',
   'pascal',
   'scala',
+  'zig',
   'unknown',
 ] as const;
 
