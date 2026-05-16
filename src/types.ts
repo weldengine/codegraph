@@ -546,6 +546,9 @@ export const DEFAULT_CONFIG: CodeGraphConfig = {
     // Scala
     '**/*.scala',
     '**/*.sc',
+    // Zig
+    '**/*.zig',
+    '**/*.zon',
   ],
   exclude: [
     // Version control
