@@ -10,6 +10,11 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Zig language support (Zig 0.16+). Indexes `.zig` and `.zon` files using
+  `tree-sitter-zig`. Extracts structs and their methods, enums and members,
+  error sets (modelled as enums), `@import` calls (as `import` nodes with
+  `imports` references), `pub` visibility, plain constants/variables, and
+  `test "..." { ... }` blocks as functions.
 - **MCP / explore**: `codegraph_explore` source sections now carry line
   numbers (cat -n style `<num>\t<code>`, matching the Read tool). This lets
   the agent cite `file:line` straight from the explore payload instead of
